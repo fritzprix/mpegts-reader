@@ -1,0 +1,10 @@
+{
+    "BASE_RECIPE":{
+        "type":"recipe",
+        "path":"recipe.mk"
+    },
+    "UTIL_CONFIG":{
+        "type":"config",
+        "path":"./utils/config.json"
+    }
+}

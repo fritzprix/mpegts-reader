@@ -1,0 +1,8 @@
+tools
+Debug
+Release
+*.o
+*.ts*
+**log
+gst_aplay_*
+autogen*
