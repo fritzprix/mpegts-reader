@@ -48,14 +48,18 @@ extern "C"
 
     typedef struct
     {
+        dlistNode_t ln;
         dlistEntry_t segment_list;
+        char* url;
     } mpegts_stream_t;
 
-    extern void mpegts_stream_init(mpegts_stream_t *stream);
+    extern void mpegts_stream_init(mpegts_stream_t *stream, const char* url);
     extern void mpegts_segment_init(mpegts_segement_t* segment);
-    extern void mpegts_stream_read_segment(mpegts_stream_t *stream, int fd);
+    extern void mpegts_stream_read_segment(mpegts_stream_t *stream);
     extern void mpegts_stream_pes_reset_len(mpegts_stream_t* stream);
     extern void mpegts_stream_write_segment(mpegts_stream_t *stream, int fd);
+    extern uint8_t mpegts_stream_get_last_cc(mpegts_stream_t* stream, int pid);
+    extern uint8_t mpegts_stream_update_cc(mpegts_stream_t* stream, int pid, uint8_t init_cc);
     extern void mpegts_stream_print(const mpegts_stream_t *stream);
     extern void mpegts_stream_free(mpegts_stream_t* stream);
 

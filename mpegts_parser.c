@@ -48,13 +48,15 @@ static const char *get_stream_type_name(uint8_t stream_id);
 static const char *get_adpt_field_value(uint16_t adp);
 static const char *get_pid_description(uint16_t pid);
 
-void mpegts_stream_init(mpegts_stream_t *stream)
+void mpegts_stream_init(mpegts_stream_t *stream, const char *url)
 {
     if (!stream)
     {
         return;
     }
+    cdsl_dlistNodeInit(&stream->ln);
     cdsl_dlistEntryInit(&stream->segment_list);
+    size_t len = strlen(url);
 }
 
 void mpegts_segment_init(mpegts_segement_t *segment)
@@ -101,6 +103,46 @@ void mpegts_stream_write_segment(mpegts_stream_t *stream, int fd)
     }
 }
 
+uint8_t mpegts_stream_get_last_cc(mpegts_stream_t *stream, int pid)
+{
+    if (!stream)
+    {
+        return 0;
+    }
+    uint8_t last_cc = 0;
+    listIter_t iter;
+    cdsl_iterInit(&stream->segment_list, &iter);
+    while (cdsl_iterHasNext(&iter))
+    {
+        mpegts_segement_t *segment = (mpegts_segement_t *)cdsl_iterNext(&iter);
+        if (segment->header.pid == pid)
+        {
+            last_cc = segment->header.continuity_counter;
+        }
+    }
+    return last_cc;
+}
+
+uint8_t mpegts_stream_update_cc(mpegts_stream_t *stream, int pid, uint8_t init_cc)
+{
+    if (!stream)
+    {
+        return;
+    }
+    listIter_t iter;
+    cdsl_iterInit(&stream->segment_list, &iter);
+    while (cdsl_iterHasNext(&iter))
+    {
+        mpegts_segement_t *segment = (mpegts_segement_t *)cdsl_iterNext(&iter);
+        if (segment->header.pid == pid)
+        {
+            segment->header.continuity_counter = init_cc++;
+        }
+        init_cc &= 0xF;
+    }
+    return init_cc;
+}
+
 static void write_ts_segment(mpegts_segement_t *segment, int fd)
 {
     if (!segment)
@@ -109,31 +151,32 @@ static void write_ts_segment(mpegts_segement_t *segment, int fd)
     }
     ssize_t offset = 0;
     write_header(segment, fd);
-    uint8_t* cursor = write_adaptation_field(segment, segment->payload);
+    uint8_t *cursor = write_adaptation_field(segment, segment->payload);
     cursor = write_pes_header(segment, cursor);
     write(fd, segment->payload, sizeof(segment->payload));
 }
 
-void mpegts_stream_read_segment(mpegts_stream_t *stream, int fd)
+void mpegts_stream_read_segment(mpegts_stream_t *stream)
 {
-    if (!stream)
+    if (!stream || !stream->url)
     {
         LOG_DBG("null stream");
         return;
     }
+    int fd = open(stream->url, O_RDONLY);
     cdsl_dlistEntryInit(&stream->segment_list);
     mpegts_segement_t *current = (mpegts_segement_t *)malloc(sizeof(mpegts_segement_t));
     mpegts_segment_init(current);
     while (parse_ts_segment(fd, current))
     {
-        cdsl_dlistPutTail(&stream->segment_list, (dlistNode_t *) current);
-        current = (mpegts_segement_t *) malloc(sizeof(mpegts_segement_t));
+        cdsl_dlistPutTail(&stream->segment_list, (dlistNode_t *)current);
+        current = (mpegts_segement_t *)malloc(sizeof(mpegts_segement_t));
         mpegts_segment_init(current);
     }
     uint32_t sz = cdsl_dlistSize(&stream->segment_list);
     LOG_DBG("ts segment count : %u\n", sz);
-    mpegts_segement_t* last = (mpegts_segement_t*) cdsl_dlistGetLast(&stream->segment_list);
-    LOG_DBG("last cc : %d\n", last->header.continuity_counter);
+    mpegts_segement_t *last = (mpegts_segement_t *)cdsl_dlistGetLast(&stream->segment_list);
+    close(fd);
 }
 
 void mpegts_stream_print(const mpegts_stream_t *stream)
@@ -253,8 +296,8 @@ static void print_ts_haeder(mpegts_segement_t *segment)
         LOG_ERR(EINVAL, "invalid header : scv => %s (%x) adv => %s(%x)\n", scv, header->tscramble_control, adv, header->adaptation_field_ctrl);
         return;
     }
-    printf("\n[PID : %d (%s) / TSC : %s / AD. Field : %s / PUSI : %s / Priority : %d / CC : %d]\n", 
-                    header->pid, get_pid_description(header->pid), scv,  adv, header->pusi ? "YES" : "NO", header->prior, header->continuity_counter);
+    printf("\n[PID : %d (%s) / TSC : %s / AD. Field : %s / PUSI : %s / Priority : %d / CC : %d]\n",
+           header->pid, get_pid_description(header->pid), scv, adv, header->pusi ? "YES" : "NO", header->prior, header->continuity_counter);
 }
 
 static uint8_t *parse_pcr(uint8_t *data, uint64_t *pcr)

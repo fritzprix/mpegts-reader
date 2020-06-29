@@ -9,6 +9,7 @@
 #include <gst/gst.h>
 #include "gst_aplay.h"
 #include "mpegts_parser.h"
+#include "hls_parser.h"
 
 static void player_callback(int play_task_id, int result, void *arg);
 
@@ -46,30 +47,43 @@ int main(int argc, const char *argv[])
     }
   }
 
-  int fd = open(input_path, O_RDONLY);
-  int ofd = 0;
-  if (output_path)
+  // int fd = open(input_path, O_RDONLY);
+  // int ofd = 0;
+  // if (output_path)
+  // {
+  //   remove(output_path);
+  //   ofd = open(output_path, O_CREAT | O_RDWR, 0644);
+  // }
+
+  // mpegts_stream_t stream;
+  // mpegts_stream_init(&stream);
+  // mpegts_stream_read_segment(&stream, fd);
+  // // TODO : manipulate segment
+  // mpegts_stream_pes_reset_len(&stream);
+  // mpegts_stream_print(&stream);
+  // if (ofd)
+  // {
+  //   mpegts_stream_write_segment(&stream, ofd);
+  // }
+  // mpegts_stream_free(&stream);
+  // close(fd);
+  // if (ofd)
+  // {
+  //   close(ofd);
+  // }
+
+  int fd = open("melon/playlist.m3u8", O_RDONLY);
+  if (fd <= 0)
   {
-    remove(output_path);
-    ofd = open(output_path, O_CREAT | O_RDWR, 0644);
+    return 1;
   }
 
-  mpegts_stream_t stream;
-  mpegts_stream_init(&stream);
-  mpegts_stream_read_segment(&stream, fd);
-  // TODO : manipulate segment
-  mpegts_stream_pes_reset_len(&stream);
-  mpegts_stream_print(&stream);
-  if (ofd)
-  {
-    mpegts_stream_write_segment(&stream, ofd);
-  }
-  mpegts_stream_free(&stream);
+  hls_playlist_t playlist;
+  hls_playlist_init(&playlist, NULL);
+  hls_read(&playlist, fd);
+  uint32_t sz = hls_playlist_size(&playlist);
+  printf("size : %u\n", sz);
   close(fd);
-  if (ofd)
-  {
-    close(ofd);
-  }
 
   // gst_init(NULL, NULL);
   // gst_player_t* player = gst_player_new();

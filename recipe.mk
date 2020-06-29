@@ -6,5 +6,6 @@ INC-y += /usr/include/gstreamer-1.0 \
 LIB-y += pthread gstreamer-1.0 glib-2.0  gobject-2.0 
 OBJ-y += gst_aplay \
          thread_pool \
-		 mpegts_parser 
+		 mpegts_parser \
+		 hls_parser
 
