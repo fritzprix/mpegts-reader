@@ -15,10 +15,11 @@ typedef enum
 
 static void load_media(hls_playlist_t *playlist, char *path);
 
-void hls_playlist_init(hls_playlist_t *playlist, hls_playlist_t *parent)
+void hls_playlist_init(hls_playlist_t *playlist, hls_playlist_t *parent, const char *url)
 {
-    if (!playlist)
+    if (!playlist || !url)
     {
+        LOG_ERR(EINVAL, "parameter missing\n");
         return;
     }
 
@@ -30,6 +31,13 @@ void hls_playlist_init(hls_playlist_t *playlist, hls_playlist_t *parent)
         playlist->parent = parent;
         cdsl_dlistPutTail(&parent->sublist, &playlist->dl);
     }
+
+    playlist->url = (char *)malloc(sizeof(char) * strlen(url));
+    if (!playlist->url)
+    {
+        LOG_ERR(ENOMEM, "fail to allocate!!\n");
+    }
+    strcpy(playlist->url, url);
 }
 
 uint32_t hls_playlist_size(hls_playlist_t *playlist)
@@ -42,13 +50,17 @@ uint32_t hls_playlist_size(hls_playlist_t *playlist)
     return cdsl_dlistSize(&playlist->sublist);
 }
 
-void hls_read(hls_playlist_t *playlist, int fd)
+void hls_parse(hls_playlist_t *playlist)
 {
     if (!playlist)
     {
         return;
     }
-    FILE *fp = fdopen(fd, "r");
+    FILE *fp = fopen(playlist->url, "r");
+    if (!fp)
+    {
+        return;
+    }
     char cb[512];
     memset(cb, 0, sizeof(cb));
     hls_parser_ctx_t ctx = CTX_META;
@@ -87,25 +99,18 @@ static void load_media(hls_playlist_t *playlist, char *path)
     {
         *nl = '\0';
     }
-    int fd = open(path, O_RDWR);
-    if (fd <= 0)
-    {
-        LOG_ERR(EBADFD, "fail to open %s (%d)\n", path, fd);
-        return;
-    }
     mpegts_stream_t *stream = (mpegts_stream_t *)malloc(sizeof(mpegts_stream_t));
     if (!stream)
     {
         LOG_ERR(ENOMEM, "fail to allocate ts stream");
         return;
     }
-    mpegts_stream_init(stream);
-    mpegts_stream_read_segment(stream, fd);
+    mpegts_stream_init(stream, path);
+    mpegts_stream_read_segment(stream);
     cdsl_dlistPutTail(&playlist->sublist, &stream->ln);
-    close(fd);
 }
 
-void hls_fix_discontinuity(hls_playlist_t *playlist)
+void hls_fix_discontinuity(hls_playlist_t *playlist, int *pids, size_t pid_count)
 {
     if (!playlist)
     {
@@ -113,11 +118,31 @@ void hls_fix_discontinuity(hls_playlist_t *playlist)
     }
 
     listIter_t iter;
-    uint8_t cc = 0;
     cdsl_dlistIterInit(&playlist->sublist, &iter);
-    while (cdsl_iterHasNext(&iter))
+    size_t i = 0;
+    for (; i < pid_count; i++)
     {
-        mpegts_stream_t *stream = (mpegts_stream_t *)cdsl_iterNext(&iter);
-        cc = mpegts_stream_update_cc(stream, 0x100, cc);
+        uint8_t cc = 0;
+        while (cdsl_iterHasNext(&iter))
+        {
+            mpegts_stream_t *stream = (mpegts_stream_t *)cdsl_iterNext(&iter);
+            cc = mpegts_stream_update_cc(stream, 0x100, cc);
+            LOG_DBG("CC : %u\n", cc);
+        }
+    }
+}
+
+void hls_update(hls_playlist_t *playlist)
+{
+    if (!playlist)
+    {
+        return;
+    }
+    listIter_t iter;
+    cdsl_dlistIterInit(&playlist->sublist, &iter);
+    while (cdsl_dlistIterHasNext(&iter))
+    {
+        mpegts_stream_t *stream = (mpegts_stream_t *)cdsl_dlistIterNext(&iter);
+        mpegts_stream_write(stream, NULL);
     }
 }

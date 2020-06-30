@@ -30,6 +30,8 @@ extern "C"
         uint8_t stream_id;
         uint16_t len;
         uint32_t scramble : 2, priority : 1, align_ind : 1, cp_right : 1, original : 1, pts_ind : 2, escr : 1, es : 1, dsm_trick : 1, additional_cp_info : 1, crc : 1, ext : 1, pes_header_len : 8;
+        uint64_t pts;
+        uint64_t dts;
     } pes_header_t;
 
     typedef struct mpegts_segment mpegts_segement_t;
@@ -50,18 +52,18 @@ extern "C"
     {
         dlistNode_t ln;
         dlistEntry_t segment_list;
-        char* url;
+        char *url;
     } mpegts_stream_t;
 
-    extern void mpegts_stream_init(mpegts_stream_t *stream, const char* url);
-    extern void mpegts_segment_init(mpegts_segement_t* segment);
+    extern void mpegts_stream_init(mpegts_stream_t *stream, const char *url);
+    extern void mpegts_segment_init(mpegts_segement_t *segment);
     extern void mpegts_stream_read_segment(mpegts_stream_t *stream);
-    extern void mpegts_stream_pes_reset_len(mpegts_stream_t* stream);
-    extern void mpegts_stream_write_segment(mpegts_stream_t *stream, int fd);
-    extern uint8_t mpegts_stream_get_last_cc(mpegts_stream_t* stream, int pid);
-    extern uint8_t mpegts_stream_update_cc(mpegts_stream_t* stream, int pid, uint8_t init_cc);
+    extern void mpegts_stream_pes_reset_len(mpegts_stream_t *stream);
+    extern ssize_t mpegts_stream_write(mpegts_stream_t *stream, const char *path);
+    extern uint8_t mpegts_stream_get_last_cc(mpegts_stream_t *stream, int pid);
+    extern uint8_t mpegts_stream_update_cc(mpegts_stream_t *stream, int pid, uint8_t init_cc);
     extern void mpegts_stream_print(const mpegts_stream_t *stream);
-    extern void mpegts_stream_free(mpegts_stream_t* stream);
+    extern void mpegts_stream_free(mpegts_stream_t *stream);
 
 #ifdef __cplusplus
 }

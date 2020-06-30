@@ -15,13 +15,15 @@ extern "C"
     {
         dlistNode_t dl;
         dlistEntry_t sublist;
+        char *url;
         hls_playlist_t *parent;
     };
 
-    extern void hls_playlist_init(hls_playlist_t *playlist, hls_playlist_t *parent);
+    extern void hls_playlist_init(hls_playlist_t *playlist, hls_playlist_t *parent, const char *url);
     extern uint32_t hls_playlist_size(hls_playlist_t *playlist);
-    extern void hls_read(hls_playlist_t *playlist, int fd);
-    extern void hls_fix_discontinuity(hls_playlist_t *playlist);
+    extern void hls_parse(hls_playlist_t *playlist);
+    extern void hls_fix_discontinuity(hls_playlist_t *playlist, int *pids, size_t pid_count);
+    extern void hls_update(hls_playlist_t *playlist);
 
 #ifdef __cplusplus
 }

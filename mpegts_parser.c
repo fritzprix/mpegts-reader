@@ -8,6 +8,9 @@
 #include "utils/cdsl_dlist.h"
 
 #define TS_SYNC (uint8_t)0x47
+#define PTS_MASK (uint8_t)0b00110001
+#define DTS_MASK (uint8_t)0b00010001
+#define PTS_ONLY_MASK (uint8_t)0b00100001
 
 #define SYNC_MASK (uint32_t)0xff
 #define GET_SYNC(v) ((v & SYNC_MASK))
@@ -27,6 +30,7 @@
 #define CC_MAKS (uint32_t)0x0f000000
 
 static void print_ts_haeder(mpegts_segement_t *segment);
+static uint64_t get_pes_pts(uint8_t marker, uint8_t *src);
 static void print_adaptation_field(mpegts_segement_t *segment);
 static void print_payload(mpegts_segement_t *segment);
 
@@ -57,6 +61,12 @@ void mpegts_stream_init(mpegts_stream_t *stream, const char *url)
     cdsl_dlistNodeInit(&stream->ln);
     cdsl_dlistEntryInit(&stream->segment_list);
     size_t len = strlen(url);
+    stream->url = (char *)malloc(len * sizeof(char));
+    if (!stream->url)
+    {
+        LOG_ERR(ENOMEM, "fail to allocate memory\n");
+    }
+    strcpy(stream->url, url);
 }
 
 void mpegts_segment_init(mpegts_segement_t *segment)
@@ -88,21 +98,6 @@ void mpegts_stream_pes_reset_len(mpegts_stream_t *stream)
     }
 }
 
-void mpegts_stream_write_segment(mpegts_stream_t *stream, int fd)
-{
-    if (!stream)
-    {
-        return;
-    }
-    listIter_t iterator;
-    cdsl_dlistIterInit(&stream->segment_list, &iterator);
-    while (cdsl_iterHasNext(&iterator))
-    {
-        mpegts_segement_t *segment = (mpegts_segement_t *)cdsl_iterNext(&iterator);
-        write_ts_segment(segment, fd);
-    }
-}
-
 uint8_t mpegts_stream_get_last_cc(mpegts_stream_t *stream, int pid)
 {
     if (!stream)
@@ -111,7 +106,7 @@ uint8_t mpegts_stream_get_last_cc(mpegts_stream_t *stream, int pid)
     }
     uint8_t last_cc = 0;
     listIter_t iter;
-    cdsl_iterInit(&stream->segment_list, &iter);
+    cdsl_dlistIterInit(&stream->segment_list, &iter);
     while (cdsl_iterHasNext(&iter))
     {
         mpegts_segement_t *segment = (mpegts_segement_t *)cdsl_iterNext(&iter);
@@ -123,14 +118,38 @@ uint8_t mpegts_stream_get_last_cc(mpegts_stream_t *stream, int pid)
     return last_cc;
 }
 
+ssize_t mpegts_stream_write(mpegts_stream_t *stream, const char *path)
+{
+    if (!stream)
+    {
+        return 0;
+    }
+
+    const char *dest = path ? path : stream->url;
+    int fd = open(dest, O_RDWR);
+    if (fd <= 0)
+    {
+        return 0;
+    }
+    listIter_t iterator;
+    cdsl_dlistIterInit(&stream->segment_list, &iterator);
+    while (cdsl_iterHasNext(&iterator))
+    {
+        mpegts_segement_t *segment = (mpegts_segement_t *)cdsl_iterNext(&iterator);
+        write_ts_segment(segment, fd);
+    }
+    close(fd);
+    return 0;
+}
+
 uint8_t mpegts_stream_update_cc(mpegts_stream_t *stream, int pid, uint8_t init_cc)
 {
     if (!stream)
     {
-        return;
+        return 0;
     }
     listIter_t iter;
-    cdsl_iterInit(&stream->segment_list, &iter);
+    cdsl_dlistIterInit(&stream->segment_list, &iter);
     while (cdsl_iterHasNext(&iter))
     {
         mpegts_segement_t *segment = (mpegts_segement_t *)cdsl_iterNext(&iter);
@@ -164,6 +183,11 @@ void mpegts_stream_read_segment(mpegts_stream_t *stream)
         return;
     }
     int fd = open(stream->url, O_RDONLY);
+    if (fd <= 0)
+    {
+        LOG_ERR(EBADFD, "fail to open : %s\n", stream->url);
+        return;
+    }
     cdsl_dlistEntryInit(&stream->segment_list);
     mpegts_segement_t *current = (mpegts_segement_t *)malloc(sizeof(mpegts_segement_t));
     mpegts_segment_init(current);
@@ -207,6 +231,10 @@ void mpegts_stream_free(mpegts_stream_t *stream)
         }
         free(segment);
     }
+    if (stream->url)
+    {
+        free(stream->url);
+    }
 }
 
 static int parse_ts_segment(int fd, mpegts_segement_t *segment)
@@ -246,6 +274,8 @@ static void print_payload(mpegts_segement_t *segment)
         const pes_header_t *header = segment->pes_header;
         printf("\t\t>>>PAYLOAD [PES Header][Stream ID 0x%02x (%s)][PTS/DTS :(%s) / length : %u / scramble ctrl : 0x%02x / priority : %d / align ind. : %d / copyright : %d / opt. len : %d]\n",
                header->stream_id, get_stream_type_name(header->stream_id), get_pts_value(header->pts_ind), header->len, header->scramble, header->priority, header->align_ind, header->cp_right, header->pes_header_len);
+        printf("\t\t>>>[ESCR : %d / ES rate : %d / DSM trick mode : %d / Add. Copyr info : %d / CRC %d / Ext. :%d]\n", header->escr, header->es, header->dsm_trick, header->additional_cp_info, header->crc, header->ext);
+        printf("\t\t>>> PTS : %lu / DTS : %lu\n", header->pts, header->dts);
     }
 }
 
@@ -429,6 +459,8 @@ static const char *get_pid_description(uint16_t pid)
         return "TSDT";
     case 0x03:
         return "IPMP";
+    case 0xfff:
+        return "PMT";
     case 0x1ffb:
         return "ATSC MGT meta";
     case 0x1fff:
@@ -578,8 +610,32 @@ static uint8_t *parse_pes_header(uint8_t *data, mpegts_segement_t *segment)
     pes_header->align_ind = (data[6] & 0x4) == 0x4;
     pes_header->cp_right = (data[6] & 0x2) == 0x2;
     pes_header->original = (data[6] & 0x1) == 0x1;
+    pes_header->pts_ind = ((data[7] & 0xC0) >> 6);
     pes_header->pes_header_len = data[8];
     segment->pes_header = pes_header;
+    switch (pes_header->pts_ind)
+    {
+    case 0x2:
+        pes_header->pts = get_pes_pts(PTS_ONLY_MASK, &data[9]);
+        break;
+    case 0x3:
+        pes_header->pts = get_pes_pts(PTS_MASK, &data[9]);
+        pes_header->dts = get_pes_pts(DTS_MASK, &data[14]);
+        break;
+    }
     next = &data[9];
     return &next[pes_header->pes_header_len];
+}
+
+static uint64_t get_pes_pts(uint8_t marker, uint8_t *src)
+{
+    uint64_t v = 0;
+    if ((src[0] & marker) == marker)
+    {
+
+        v = (((src[0] & 0x0F) >> 1) << 30);
+        v += (((src[1] << 7) | (src[2] >> 1)) << 15);
+        v += ((src[3] << 7) | (src[4] >> 1));
+    }
+    return v;
 }
