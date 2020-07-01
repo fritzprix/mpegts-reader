@@ -25,7 +25,7 @@ int main(int argc, const char *argv[])
     char *token = NULL;
     strcpy(argb, argv[i]);
     token = strchr(argb, '-');
-    if (token)
+    if (token && (token == argb))
     {
       ctx = token[1];
     }
@@ -52,51 +52,53 @@ int main(int argc, const char *argv[])
     remove(output_path);
   }
 
-  mpegts_stream_t stream;
-  mpegts_stream_init(&stream, input_path);
-  mpegts_stream_read_segment(&stream);
-  // TODO : manipulate segment
-  // mpegts_stream_pes_reset_len(&stream);
-  mpegts_stream_print(&stream);
-  if (output_path)
-  {
-    mpegts_stream_write(&stream, output_path);
-  }
-  mpegts_stream_free(&stream);
+  // mpegts_stream_t stream;
+  // mpegts_stream_init(&stream, input_path);
+  // mpegts_stream_read_segment(&stream);
+  // // TODO : manipulate segment
+  // // mpegts_stream_pes_reset_len(&stream);
+  // mpegts_stream_print(&stream);
+  // if (output_path)
+  // {
+  //   mpegts_stream_write(&stream, output_path);
+  // }
+  // mpegts_stream_free(&stream);
 
   // int pids[] = {
-  //     0xff, 0, 0xfff};
+  //     0x100, 0, 0xfff};
   // hls_playlist_t playlist;
   // hls_playlist_init(&playlist, NULL, "melon/playlist.m3u8");
   // hls_parse(&playlist);
   // uint32_t sz = hls_playlist_size(&playlist);
-  // hls_fix_discontinuity(&playlist, pids, sizeof(pids));
+  // // hls_fix_discontinuity(&playlist, pids, sizeof(pids));
+  // hls_fix_key_frame_info(&playlist, 0x100);
+  // hls_update_pcr_by_pts(&playlist, 0x100);
+  // hls_print_timestamp(&playlist, 0x100);
   // hls_update(&playlist);
-  // printf("size : %u\n", sz);
 
-  // gst_init(NULL, NULL);
-  // gst_player_t *player = gst_player_new();
-  // int c = 10;
+  gst_init(NULL, NULL);
+  gst_player_t *player = gst_player_new();
+  int c = 10;
 
-  // // const int play_id = gst_player_play(player, "http://1.225.1.16/media/melon/playlist.m3u8", player_callback, NULL, SINGLE);
-  // // const int play_id = gst_player_play(player, "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8", player_callback, NULL, SINGLE);
+  // const int play_id = gst_player_play(player, "http://1.225.1.16/media/melon/playlist.m3u8", player_callback, NULL, SINGLE);
+  // const int play_id = gst_player_play(player, "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8", player_callback, NULL, SINGLE);
 
-  // const int play_id = gst_player_play(player, "file:///ssd/dev/my_work/gst-aplay/melon/playlist.m3u8", player_callback, NULL, SINGLE);
-  // while (c)
-  // {
-  //   sleep(3);
-  //   if (!gst_player_seek(player, play_id, 20015))
-  //   {
-  //     LOG_DBG("seek to 30 sec. offset\n");
-  //   }
-  //   else
-  //   {
-  //     LOG_DBG("fail to seek\n");
-  //     exit(-1);
-  //   }
-  // }
-  // gst_player_stop(player, play_id);
-  // gst_player_destroy(player);
+  const int play_id = gst_player_play(player, "file:///home/lucifer/my_work/mpegts-reader/melon/playlist.m3u8", player_callback, NULL, SINGLE);
+  while (c)
+  {
+    sleep(3);
+    if (!gst_player_seek(player, play_id, 30014))
+    {
+      LOG_DBG("seek to 30 sec. offset\n");
+    }
+    else
+    {
+      LOG_DBG("fail to seek\n");
+      exit(-1);
+    }
+  }
+  gst_player_stop(player, play_id);
+  gst_player_destroy(player);
   return 0;
 }
 

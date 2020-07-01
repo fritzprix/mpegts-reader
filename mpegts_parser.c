@@ -203,6 +203,62 @@ void mpegts_stream_read_segment(mpegts_stream_t *stream)
     close(fd);
 }
 
+void mpegts_stream_print_pes_header(const mpegts_stream_t *stream, uint16_t pid)
+{
+    if (!stream)
+    {
+        return;
+    }
+    listIter_t iter;
+    cdsl_dlistIterInit(&stream->segment_list, &iter);
+    while (cdsl_dlistIterHasNext(&iter))
+    {
+        mpegts_segement_t *segment = (mpegts_segement_t *)cdsl_dlistIterNext(&iter);
+        if (segment->header.pusi && (segment->header.pid == pid))
+        {
+            print_ts_haeder(segment);
+            print_adaptation_field(segment);
+            print_payload(segment);
+        }
+    }
+}
+
+void mpegts_stream_fix_keyframe(mpegts_stream_t *stream, uint16_t pid)
+{
+    if (!stream)
+    {
+        return;
+    }
+    listIter_t iter;
+    cdsl_dlistIterInit(&stream->segment_list, &iter);
+    while (cdsl_dlistIterHasNext(&iter))
+    {
+        mpegts_segement_t *segment = (mpegts_segement_t *)cdsl_dlistIterNext(&iter);
+        if (segment->header.pusi && (segment->header.pid == pid) && segment->adaptation_field.has_pcr)
+        {
+            segment->adaptation_field.rand_acc = 1;
+        }
+    }
+}
+
+void mpegts_stream_update_pcr_by_pts(mpegts_stream_t *stream, uint16_t pid)
+{
+    if (!stream)
+    {
+        return;
+    }
+    listIter_t iter;
+    cdsl_dlistIterInit(&stream->segment_list, &iter);
+    while (cdsl_dlistIterHasNext(&iter))
+    {
+        mpegts_segement_t *segment = (mpegts_segement_t *)cdsl_dlistIterNext(&iter);
+        if (segment->adaptation_field.has_pcr && segment->pes_header && segment->pes_header->pts)
+        {
+            segment->adaptation_field.pcr = segment->pes_header->pts * 300;
+        }
+    }
+}
+
 void mpegts_stream_print(const mpegts_stream_t *stream)
 {
     listIter_t iter;
@@ -275,7 +331,7 @@ static void print_payload(mpegts_segement_t *segment)
         printf("\t\t>>>PAYLOAD [PES Header][Stream ID 0x%02x (%s)][PTS/DTS :(%s) / length : %u / scramble ctrl : 0x%02x / priority : %d / align ind. : %d / copyright : %d / opt. len : %d]\n",
                header->stream_id, get_stream_type_name(header->stream_id), get_pts_value(header->pts_ind), header->len, header->scramble, header->priority, header->align_ind, header->cp_right, header->pes_header_len);
         printf("\t\t>>>[ESCR : %d / ES rate : %d / DSM trick mode : %d / Add. Copyr info : %d / CRC %d / Ext. :%d]\n", header->escr, header->es, header->dsm_trick, header->additional_cp_info, header->crc, header->ext);
-        printf("\t\t>>> PTS : %lu / DTS : %lu\n", header->pts, header->dts);
+        printf("\t\t>>> PTS : %lu (%f sec.) / DTS : %lu\n", header->pts, header->pts / 90000.f, header->dts);
     }
 }
 
@@ -298,7 +354,7 @@ static void print_adaptation_field(mpegts_segement_t *segment)
            adf->ad_ext);
     if (adf->has_pcr)
     {
-        printf("\t>> PCR : %lu\n", adf->pcr);
+        printf("\t>> PCR : %lu (%f sec.)\n", adf->pcr, adf->pcr / 27000000.f);
     }
 }
 
@@ -336,6 +392,19 @@ static uint8_t *parse_pcr(uint8_t *data, uint64_t *pcr)
     uint64_t pcr_ext = ((data[4] & 1) << 8) | (data[5]);
     *pcr = 300 * pcr_base + pcr_ext;
     return &data[6];
+}
+
+static uint8_t write_pcr(uint8_t *data, uint64_t pcr)
+{
+    uint64_t pcr_base = pcr / 300;
+    uint64_t pcr_ext = pcr % 300;
+    data[0] = pcr_base >> 25;
+    data[1] = pcr_base >> 17;
+    data[2] = pcr_base >> 9;
+    data[3] = pcr_base >> 1;
+    data[4] |= (pcr_base & 0x80);
+    data[4] |= ((pcr_ext >> 8) & 1);
+    data[5] = pcr_ext;
 }
 
 static uint32_t write_header(mpegts_segement_t *segment, int fd)
@@ -508,6 +577,15 @@ static uint8_t *write_adaptation_field(mpegts_segement_t *segment, uint8_t *wb)
         return wb;
     }
     ts_adapt_field_t *adp = &segment->adaptation_field;
+    if (adp->rand_acc)
+    {
+        wb[1] |= 0x40;
+    }
+    if (adp->has_pcr)
+    {
+        write_pcr(&wb[2], adp->pcr);
+    }
+
     if (segment->header.adaptation_field_ctrl & 0x2)
     {
         if (adp->len)

@@ -63,28 +63,35 @@ void hls_parse(hls_playlist_t *playlist)
     }
     char cb[512];
     memset(cb, 0, sizeof(cb));
-    hls_parser_ctx_t ctx = CTX_META;
     while (fgets(cb, sizeof(cb), fp))
     {
-        switch (ctx)
+        char *tag_starter = strchr(cb, '#');
+        if (tag_starter)
         {
-        case CTX_META:
-            if (strstr(cb, "EXTINF"))
-            {
-                ctx = CTX_MEDIA;
-            }
-            break;
-        case CTX_MEDIA:
-            printf("media : %s", cb);
+        }
+        else
+        {
             load_media(playlist, cb);
-            ctx = CTX_META;
-            break;
-        default:
-            break;
         }
         memset(cb, 0, sizeof(cb));
     }
     fclose(fp);
+}
+
+void hls_print_timestamp(hls_playlist_t *playlist, uint16_t pid)
+{
+    if (!playlist)
+    {
+        return;
+    }
+
+    listIter_t iter;
+    cdsl_dlistIterInit(&playlist->sublist, &iter);
+    while (cdsl_dlistIterHasNext(&iter))
+    {
+        mpegts_stream_t *stream = (mpegts_stream_t *)cdsl_dlistIterNext(&iter);
+        mpegts_stream_print_pes_header(stream, pid);
+    }
 }
 
 static void load_media(hls_playlist_t *playlist, char *path)
@@ -108,6 +115,36 @@ static void load_media(hls_playlist_t *playlist, char *path)
     mpegts_stream_init(stream, path);
     mpegts_stream_read_segment(stream);
     cdsl_dlistPutTail(&playlist->sublist, &stream->ln);
+}
+
+void hls_fix_key_frame_info(hls_playlist_t *playlist, uint16_t pid)
+{
+    if (!playlist)
+    {
+        return;
+    }
+    listIter_t iter;
+    cdsl_dlistIterInit(&playlist->sublist, &iter);
+    while (cdsl_iterHasNext(&iter))
+    {
+        mpegts_stream_t *stream = (mpegts_stream_t *)cdsl_iterNext(&iter);
+        mpegts_stream_fix_keyframe(stream, pid);
+    }
+}
+
+void hls_update_pcr_by_pts(hls_playlist_t *playlist, uint16_t pid)
+{
+    if (!playlist)
+    {
+        return;
+    }
+    listIter_t iter;
+    cdsl_dlistIterInit(&playlist->sublist, &iter);
+    while (cdsl_iterHasNext(&iter))
+    {
+        mpegts_stream_t *stream = (mpegts_stream_t *)cdsl_iterNext(&iter);
+        mpegts_stream_update_pcr_by_pts(stream, pid);
+    }
 }
 
 void hls_fix_discontinuity(hls_playlist_t *playlist, int *pids, size_t pid_count)

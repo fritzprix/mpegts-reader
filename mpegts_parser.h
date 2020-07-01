@@ -62,6 +62,9 @@ extern "C"
     extern ssize_t mpegts_stream_write(mpegts_stream_t *stream, const char *path);
     extern uint8_t mpegts_stream_get_last_cc(mpegts_stream_t *stream, int pid);
     extern uint8_t mpegts_stream_update_cc(mpegts_stream_t *stream, int pid, uint8_t init_cc);
+    extern void mpegts_stream_print_pes_header(const mpegts_stream_t *stream, uint16_t pid);
+    extern void mpegts_stream_fix_keyframe(mpegts_stream_t* stream, uint16_t pid);
+    extern void mpegts_stream_update_pcr_by_pts(mpegts_stream_t* stream, uint16_t pid);
     extern void mpegts_stream_print(const mpegts_stream_t *stream);
     extern void mpegts_stream_free(mpegts_stream_t *stream);
 
